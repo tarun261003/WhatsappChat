@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,29 +9,72 @@ import nltk
 import seaborn as sns
 from collections import Counter
 import html
-# Set page configuration as the first Streamlit command
+
+# Set page configuration
 st.set_page_config(page_title="WhatsApp Chat Analysis", layout="wide")
 
 # Download VADER lexicon for sentiment analysis
 nltk.download('vader_lexicon')
 
-# Load and preprocess the chat data from an uploaded CSV file
+def displayLocalGIF(placeholder, imagePath, caption):
+    placeholder.image(
+        imagePath,
+        # use_column_width=False,  # Disable container width
+        width=500,               # Set the width
+        caption=caption       # Optional caption
+    )
+# Function to load and process the chat data from uploaded file
 @st.cache_data
-def load_data(file):
-    df = pd.read_csv(file, parse_dates=['Date'])
-    return df
+def load_chat_data(file):
+    # Read chat data as text, not bytes
+    data = file.read().decode("utf-8").splitlines()
+    dates, times, senders, messages = [], [], [], []
+    
+    # Regular expression pattern for message lines
+    pattern = r"(\d{1,2}/\d{1,2}/\d{2,4}), (\d{1,2}:\d{2}\s[APM]{2}) - ([^:]+): (.+)"
+    
+    # Extract structured data
+    for line in data:
+        # Skip encryption notice lines
+        if "Messages and calls are end-to-end encrypted" in line:
+            continue
+        match = re.match(pattern, line)
+        if match:
+            date, time, sender, message = match.groups()
+            dates.append(date)
+            times.append(time)
+            senders.append(sender)
+            messages.append(message)
+    
+    # Create DataFrame
+    chat_df = pd.DataFrame({
+        'Date': dates,
+        'Time': times,
+        'Sender': senders,
+        'Message': messages
+    })
+    
+    # Convert 'Date' and 'Time' to datetime objects
+    chat_df['Date'] = pd.to_datetime(chat_df['Date'], format='%m/%d/%y')
+    chat_df['Time'] = pd.to_datetime(chat_df['Time'], format='%I:%M %p').dt.time
+    return chat_df
 
-# File uploader for dynamic file loading
-uploaded_file = st.file_uploader("Upload WhatsApp Chat CSV", type="csv")
+
+# File uploader to upload WhatsApp chat .txt file
+uploaded_file = st.file_uploader("Upload WhatsApp Chat .txt", type="txt")
+image_placeholder1 = st.empty()
+imagePath1 ="https://github.com/tarun261003/WhatsappChat/blob/main/Intro.gif?raw=true"
+displayLocalGIF(image_placeholder1, imagePath1,"Remote Image")
 if uploaded_file is not None:
-    chat_df = load_data(uploaded_file)
-    chat_df = chat_df[~chat_df['Message'].isin(["Media omitted", "GIF omitted", "Sticker omitted"])]  # Clean the data
-
+    chat_df = load_chat_data(uploaded_file)
+    
+    # st.image('https://github.com/tarun261003/WhatsappChat/blob/main/Intro.gif?raw=true', use_column_width=True)
     # Initialize sentiment analyzer
     sid = SentimentIntensityAnalyzer()
 
-    # Handle NaN values in 'Message' column by replacing them with empty strings
+    # Clean and preprocess data
     chat_df['Message'] = chat_df['Message'].fillna('')
+    chat_df = chat_df[~chat_df['Message'].isin(["Media omitted", "GIF omitted", "Sticker omitted"])]  
 
     # Perform sentiment analysis on each message
     chat_df['Sentiment'] = chat_df['Message'].apply(lambda x: sid.polarity_scores(x)['compound'])
@@ -44,11 +88,9 @@ if uploaded_file is not None:
     end_date = st.sidebar.date_input("End Date", chat_df['Date'].max())
     selected_senders = st.sidebar.multiselect("Select Participants", options=chat_df['Sender'].unique())
 
-    # Ensure that start_date and end_date are in datetime format
+    # Filter data based on user input
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
-
-    # Filter data based on user input
     filtered_df = chat_df[(chat_df['Date'] >= start_date) & (chat_df['Date'] <= end_date)]
     if selected_senders:
         filtered_df = filtered_df[filtered_df['Sender'].isin(selected_senders)]
@@ -66,7 +108,7 @@ if uploaded_file is not None:
     # Activity Over Time
     st.subheader("Daily and Hourly Activity")
     daily_messages = filtered_df.groupby(filtered_df['Date']).size()
-    hourly_messages = filtered_df.groupby(filtered_df['Time'].apply(lambda x: int(x.split(":")[0]))).size()
+    hourly_messages = filtered_df.groupby(filtered_df['Time'].apply(lambda x: x.hour)).size()
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     daily_messages.plot(ax=ax1, title='Messages per Day')
@@ -81,33 +123,6 @@ if uploaded_file is not None:
     plt.figure(figsize=(10, 5))
     plt.imshow(wordcloud, interpolation="bilinear")
     plt.axis("off")
-
-    # Add zoom-in effect for the word cloud display using CSS
-    st.markdown("""
-    <style>
-        .zoom-container {
-            transform: scale(0);
-            opacity: 0;
-            transition: transform 0.5s ease, opacity 0.5s ease;
-        }
-        .zoom-container.show {
-            transform: scale(1);
-            opacity: 1;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="zoom-container" id="zoom-content">
-        <p>Word Cloud Display:</p>
-    </div>
-    <script>
-        setTimeout(function() {
-            document.getElementById('zoom-content').classList.add('show');
-        }, 500);
-    </script>
-    """, unsafe_allow_html=True)
-
     st.pyplot(plt)
 
     # Emoji Analysis
@@ -150,29 +165,25 @@ if uploaded_file is not None:
 
     # Message Activity Heatmap (Hourly by Day of Week)
     st.subheader("Message Activity Heatmap (Hourly by Day of Week)")
-    chat_df['Hour'] = chat_df['Time'].apply(lambda x: int(x.split(":")[0]))
+    chat_df['Hour'] = chat_df['Time'].apply(lambda x: x.hour)
     activity_heatmap = pd.crosstab(chat_df['Hour'], chat_df['Day of Week'])
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.heatmap(activity_heatmap, cmap="YlGnBu", ax=ax)
     ax.set_title("Hourly Activity by Day of the Week")
     st.pyplot(fig)
 
+
     # Top Words by Participant with Zoom-in Effect
     st.subheader("Top Words by Participant")
-
-    # Create a container for each sender's top words with a zoom-in effect
     for sender in chat_df['Sender'].unique():
         words = ' '.join(chat_df[chat_df['Sender'] == sender]['Message']).split()
         most_common_words = Counter(words).most_common(10)
         
-        # Displaying words with a zoom-in effect
         word_list_html = f"<h3>Top words for {sender}:</h3>"
         for idx, (word, _) in enumerate(most_common_words):
-            # Use html.escape to sanitize the word to avoid any issues with HTML interpretation
             sanitized_word = html.escape(word)
             word_list_html += f"<span class='zoom-word' style='animation-delay:{idx * 0.1}s'>{sanitized_word}</span> "
 
-        # Inject CSS and JavaScript for the zoom-in transition
         st.markdown("""
         <style>
             .zoom-word {
@@ -196,7 +207,6 @@ if uploaded_file is not None:
         </style>
         """, unsafe_allow_html=True)
         
-        # Display the words with zoom-in effect
         st.markdown(word_list_html, unsafe_allow_html=True)
 
     # Monthly Message Trends
