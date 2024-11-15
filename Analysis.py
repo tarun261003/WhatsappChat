@@ -67,7 +67,7 @@ imagePath1 ="https://github.com/tarun261003/WhatsappChat/blob/main/Intro.gif?raw
 displayLocalGIF(image_placeholder1, imagePath1,"Remote Image")
 if uploaded_file is not None:
     chat_df = load_chat_data(uploaded_file)
-    
+    image_placeholder1.empty()
     # st.image('https://github.com/tarun261003/WhatsappChat/blob/main/Intro.gif?raw=true', use_column_width=True)
     # Initialize sentiment analyzer
     sid = SentimentIntensityAnalyzer()
