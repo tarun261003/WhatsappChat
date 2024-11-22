@@ -18,11 +18,17 @@ st.set_page_config(page_title="WhatsApp Chat Analysis", layout="wide")
 nltk.download('vader_lexicon')
 
 def displayLocalGIF(placeholder, imagePath, caption):
-    placeholder.image(
-        imagePath,
-        width=500,  # Set the width
-        caption=caption  # Optional caption
+    # Center-align using Markdown and CSS
+    placeholder.markdown(
+        f"""
+        <div style="text-align: center;">
+            <img src="{imagePath}" width="500" />
+            <p>{caption}</p>
+        </div>
+        """,
+        unsafe_allow_html=True  # Required to use HTML in Markdown
     )
+
 
 # Function to load and process the chat data from uploaded file
 @st.cache_data
